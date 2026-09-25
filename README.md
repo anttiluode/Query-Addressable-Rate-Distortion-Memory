@@ -161,6 +161,73 @@ Gate 1's 30% reversal should **not** be called a clean phase boundary anymore. T
 
 This makes the next problem more interesting than simply collecting more queries. A useful memory needs some representation of **uncertainty about what future queries will matter**.
 
+## Gate 3 — resident directional sensitivity with shrinkage
+
+Gate 2 left a more precise problem: a finite query log contains real information about what future computation will care about, but greedy allocation can over-specialize to that finite sample. Gate 3 therefore asked whether the raw query log can be replaced by a **fixed-size resident directional statistic**, and whether a small uncertainty prior improves decisions made from that statistic.
+
+For each original episode `i` and payload coordinate `j`, the controller keeps only
+
+```math
+S_{ij} = \sum_{q \to i} q_j^2
+```
+
+plus the access count for each episode and one global average probe-energy scalar. The individual query objects, cues and targets are discarded after this state is built. The frozen state is **313 scalars** versus **6,120 scalar values** in the 1× raw query history, about a **19.6× reduction in estimator state** before object overhead. This is not yet an end-to-end memory saving: Gate 3 deliberately does **not** charge those 313 controller scalars against the 432-scalar payload-memory budget.
+
+The raw resident objective prices a candidate compressed memory by the squared error along historically used directions. The shrunk version adds one isotropic pseudo-query per episode (`kappa = 1`):
+
+```math
+L_{shrink}(M) \propto \sum_{i,j} (S_{ij} + \kappa \alpha)\,\Delta_{ij}(M)^2.
+```
+
+The design was frozen before seeds `300..311` were scored. Full preregistration: [`docs/superpowers/specs/2026-09-25-gate3-resident-shrinkage-design.md`](docs/superpowers/specs/2026-09-25-gate3-resident-shrinkage-design.md).
+
+**Frozen classification: `FAIL_RESIDENT_SHRINKAGE`.**
+
+It misses by one preregistered cross-seed count rather than by the mean effects.
+
+| storage | raw resident | shrunk resident | query 1× | hedge | reconstruction | shrink beats raw |
+|---|---:|---:|---:|---:|---:|---:|
+| 60% | 0.1952 | **0.1946** | 0.1982 | **0.1937** | 0.3665 | 3 / 12 |
+| 50% | **0.3462** | 0.3519 | 0.3844 | 0.3652 | 0.4807 | 4 / 12 |
+| 40% | 0.5340 | **0.5159** | 0.5913 | 0.5376 | 0.5683 | **7 / 12** |
+| 30% | 0.7048 | **0.6542** | 0.7464 | 0.6508 | **0.6482** | **9 / 12** |
+
+The preregistered stress criterion required shrinkage to beat raw sensitivity in at least **8/12 seeds at both 40% and 30%**. It achieved **7/12 at 40%** and **9/12 at 30%**, so Gate 3 remains FAIL without changing `kappa` or the threshold.
+
+Everything else in the primary criterion passed:
+
+- mean shrinkage error was lower than raw sensitivity at both stress budgets: about **3.4% lower at 40%** and **7.2% lower at 30%**;
+- at 40%, shrunk sensitivity beat both hedge and reconstruction in mean error;
+- at 30%, it stayed within **0.53% of hedge** and **0.93% of reconstruction**, comfortably inside the allowed 5% margin;
+- at 50% and 60%, it stayed well inside the allowed 10% regression margin relative to query 1× and actually beat query 1× in mean error.
+
+### The surprising part: the compressed query statistic itself works
+
+Even **raw** resident sensitivity, before shrinkage, beats the full raw-query allocator in mean held-out error at every tested budget on these fresh worlds:
+
+- 60%: `0.1952` vs query 1× `0.1982`;
+- 50%: `0.3462` vs `0.3844`;
+- 40%: `0.5340` vs `0.5913`;
+- 30%: `0.7048` vs `0.7464`.
+
+That does not mean the diagonal state is a sufficient statistic in general. It deliberately throws away cue jitter, target instances and cross-coordinate covariance. In this toy world, however, throwing those details away behaves like a useful regularizer: **the history can be compressed into a directional geometry without destroying the useful query signal, and the compressed geometry can generalize better than replaying the finite query sample literally.**
+
+The isotropic pseudo-count then helps further under the strongest compression, but not uniformly enough across seeds to satisfy the frozen gate. At 50% it even makes the mean slightly worse than raw sensitivity, which is another reason not to claim a universal shrinkage rule.
+
+Frozen receipt: [`results/gate3.json`](results/gate3.json). The compact receipt contains every per-seed five-policy score plus resident hot-detail/operation counts. The expanded 190,546-byte receipt has SHA-256 `7ab02d8c5588ed28b1520ef286e090891dfbf92b62278f5e3852fa527df9ecb1`. As in the earlier gates, the environment could not reliably sustain the monolithic long run, so the committed frozen runner was executed one seed per process with unchanged code/configuration and aggregated with its own `_summarize` / `classify` functions.
+
+### What Gate 3 changes
+
+Across the three gates, the useful object is becoming less like a query cache and more like a **learned local metric over memory error**:
+
+```math
+\text{importance of losing } \Delta x_i
+\;\approx\;
+\Delta x_i^T G_i \Delta x_i.
+```
+
+Gate 3 says `G_i` does not have to be a raw log of past queries. A much smaller resident approximation can retain much of the useful geometry. But the one-seed-short failure says the uncertainty model still matters: a single fixed isotropic pseudo-count is too crude to be called robust.
+
 ## Synthetic world
 
 Each seed contains 24 episodes: 12 twin pairs.
@@ -195,6 +262,7 @@ python -m pip install -e ".[test]"
 pytest -q
 python -m experiments.run_gate1 --out results/gate1.json
 python -m experiments.run_gate2 --out results/gate2.json
+python -m experiments.run_gate3 --out results/gate3.json
 ```
 
 The build environment used for this repo killed long single shell calls before the full run could write its receipt, even though individual seeds took about 7–8 seconds. The frozen runner was therefore executed seed-by-seed with **unchanged code and configuration**, each row persisted, and those rows were aggregated with the runner's own `_summaries`, `_control_summary`, and `classify` functions. That execution fact and the frozen runner commit are recorded inside `results/gate1.json`.
@@ -229,16 +297,21 @@ Those repos motivated the question. They are **not evidence for Gate 1**; the ev
 
 ## Next gate
 
-Gate 2 says not to jump directly from an oracle calibration bank to a raw online sensitivity accumulator. A finite query history is itself noisy, and raw specialization is exactly what failed.
+Gate 3 makes the next falsifier narrower. The question is no longer whether query history can be summarized—it can, at least in this synthetic world. The open question is **how the resident metric should represent confidence**.
 
-The next gate should therefore make **uncertainty/shrinkage part of the memory rule**. One concrete form is a resident query-direction metric that is pulled toward a reconstruction/isotropic prior when evidence is sparse and allowed to specialize only as repeated accesses accumulate:
+A fixed `kappa=1` isotropic prior helped strongly at 30–40% in mean error but was not robust across every world. The next gate should therefore make shrinkage **evidence-dependent**, not globally fixed. For example, each episode/direction can carry an effective sample size or uncertainty term so specialization grows only where repeated accesses support it:
 
 ```math
-\tilde G_i = \frac{n_i}{n_i + \kappa} \hat G_i + \frac{\kappa}{n_i + \kappa} \alpha I
+\tilde G_i
+= w_i \hat G_i + (1-w_i)G_0,
+\qquad
+w_i = f(n_i,\;\text{anisotropy/variance}).
 ```
 
-with `G_hat_i` estimated only from past accesses. The test is no longer "can query history beat reconstruction?" but:
+The clean comparison is not another large parameter sweep. It is a preregistered test of three resident controllers under the same payload budget:
 
-> Can a memory learn which directions matter while remaining calibrated about what it does **not** yet know?
+1. raw directional state;
+2. fixed `kappa=1` shrinkage from Gate 3;
+3. confidence-adaptive shrinkage using only statistics available in the resident state.
 
-That would connect the query-addressable idea back to resident temporal state without pretending that past attention or past queries are perfect forecasts of the future.
+And the next accounting step should be harsher: **charge controller state against a total memory budget**. Until that survives, the 313-scalar resident metric is evidence for a mechanism, not yet a complete memory architecture.
