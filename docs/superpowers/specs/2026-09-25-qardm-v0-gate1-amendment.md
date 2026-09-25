@@ -2,11 +2,13 @@
 
 Date: 2026-09-25
 
-This amendment is written **before any scored Gate 1 seed (0–11) is run**. It preserves the original design rather than rewriting it after development probes.
+This amendment was written **before any scored Gate 1 policy comparison on seeds 0–11 was run**. It preserves the original design rather than rewriting it after development probes.
+
+> **Post-run audit correction (added after Gate 1, with no change to code, criteria, seeds, or results):** the original wording said seeds `0..11` were "untouched." That was too strong. Before this amendment, invariant/TDD tests had instantiated worlds for seeds `0..5` to check deterministic generation, accounting, merge/coarsen behavior, and near-exact full-memory answers. No `query_rd` versus `reconstruction_rd` Gate comparison, held-out Gate MSE, win count, or classification on seeds `0..11` was inspected before the freeze. Mechanism tuning and policy-comparison development probes used seeds `97..99`. Gate 1 was therefore **outcome-blind with respect to the scored seeds, but not strictly seed-unseen**. The original tests are left unchanged so this exposure remains auditable.
 
 ## What development exposed
 
-Only development seeds 97, 98 and 99 were inspected while building the mechanism. Seeds 0–11 remain untouched.
+Mechanism tuning and policy-comparison development probes used seeds 97, 98 and 99. Before the freeze, seeds 0–5 had also been instantiated only by invariant tests as described in the audit correction above; no Gate policy-comparison outcome on seeds 0–11 had been inspected.
 
 The first synthetic world gave every episode the same number of queries and normalized every probe. At 50% storage, query-aware allocation usually preserved more useful fine detail than reconstruction-aware allocation. At ~30% storage it lost on unseen query MSE: the allocator eventually had to sacrifice the same fine distinctions it was meant to protect, and a small calibration bank also made the estimate noisy.
 
