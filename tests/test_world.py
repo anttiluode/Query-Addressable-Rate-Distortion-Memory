@@ -1,5 +1,5 @@
 import numpy as np
-from qardm.world import make_world, shuffle_calibration
+from qardm.world import make_calibration_bank, make_world, shuffle_calibration
 
 
 def test_world_is_deterministic():
@@ -62,3 +62,22 @@ def test_diagnostic_query_amplifies_low_energy_fine_coordinate():
     fine = 8 + (q.family % 4)
     assert abs(q.probe[fine]) > 3.5
     assert np.linalg.norm(q.probe[:8]) < 0.2
+
+
+def test_calibration_bank_multiplier_is_deterministic_and_scales_count():
+    w = make_world(99)
+    one = make_calibration_bank(w.episodes, seed=1234, multiplier=1)
+    five = make_calibration_bank(w.episodes, seed=1234, multiplier=5)
+    again = make_calibration_bank(w.episodes, seed=1234, multiplier=5)
+    assert len(one) == len(w.calibration)
+    assert len(five) == 5 * len(one)
+    assert [q.target for q in five] == [q.target for q in again]
+    assert np.array_equal(five[0].cue, again[0].cue)
+    assert not np.array_equal(five[0].cue, five[len(one)].cue)
+
+
+def test_calibration_bank_rejects_invalid_multiplier():
+    w = make_world(99)
+    import pytest
+    with pytest.raises(ValueError):
+        make_calibration_bank(w.episodes, seed=1234, multiplier=0)
