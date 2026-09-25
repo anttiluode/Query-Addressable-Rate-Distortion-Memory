@@ -98,6 +98,27 @@ def _make_queries(
     return tuple(out)
 
 
+def make_calibration_bank(
+    episodes: tuple[Episode, ...],
+    seed: int,
+    multiplier: int = 1,
+    isotropic: bool = False,
+) -> tuple[Query, ...]:
+    """Draw one or more independent calibration banks for fixed episodes.
+
+    The first draw uses the same ``seed + 10_000`` stream as ``make_world``
+    so multiplier=1 reproduces the default calibration bank for that world.
+    Additional draws use deterministic disjoint stream offsets.
+    """
+    if multiplier < 1:
+        raise ValueError("multiplier must be at least 1")
+    queries: list[Query] = []
+    for draw in range(multiplier):
+        rng_seed = seed + 10_000 + 100_000 * draw
+        queries.extend(_make_queries(episodes, np.random.default_rng(rng_seed), isotropic))
+    return tuple(queries)
+
+
 def make_world(seed: int, isotropic: bool = False) -> World:
     rng = np.random.default_rng(seed)
     episodes: list[Episode] = []
