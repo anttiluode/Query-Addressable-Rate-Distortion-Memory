@@ -36,11 +36,11 @@ than to "minimize reconstruction error."
 
 ## Gate 1 — frozen result
 
-The original design and the pre-Gate amendment are committed under [`docs/superpowers/specs/`](docs/superpowers/specs/). The amendment was frozen before scored seeds `0..11` were inspected. Development used only seeds `97..99`.
+The original design and the pre-Gate amendment are committed under [`docs/superpowers/specs/`](docs/superpowers/specs/). The amendment was frozen before any **query-vs-reconstruction Gate score** on seeds `0..11` was inspected. Mechanism tuning/comparison probes used seeds `97..99`. Earlier invariant tests had instantiated worlds `0..5` for determinism, accounting and full-memory checks, so the Gate was **outcome-blind but not strictly seed-unseen**; the amendment now carries a post-run audit correction documenting that exposure.
 
 Full memory costs **432 scalars**. Gate 1 uses two preregistered primary budgets, 60% and 50%, plus 40% and 30% stress budgets. The primary criterion was demanding: `query_rd` had to beat both reconstruction and recency in at least 10/12 held-out seeds at **both** primary budgets.
 
-**Classification: `PASS_QUERY_RD`.**
+**Classification under the frozen criterion: `PASS_QUERY_RD`.**
 
 | storage | scalars | query RD MSE ↓ | reconstruction RD | recency | uniform coarse | wins vs reconstruction |
 |---|---:|---:|---:|---:|---:|---:|
