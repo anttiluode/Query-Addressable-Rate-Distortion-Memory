@@ -76,7 +76,7 @@ Average number of hot-family resident items still retaining full fine detail:
 
 The two policies are therefore making visibly different choices. Reconstruction spends its budget preserving a generally faithful picture of the past. Query RD is willing to merge, coarsen, and sometimes **forget low-value episodes** so that a smaller set of future-important distinctions remains sharp.
 
-At 30%, it still preserves more of those distinctions—but loses enough broad context that total query MSE becomes worse. That is the measured phase boundary in this toy system.
+At 30%, it still preserves more of those distinctions—but total held-out query MSE becomes worse. Gate 1 initially made this look like a clean compression-capacity boundary. **Gate 2 shows that interpretation was too strong:** finite-sample specialization of the query objective is a major part of the reversal.
 
 ## Controls
 
@@ -103,6 +103,63 @@ The isotropic control gives every family the same number of queries and uses uni
 | 50% | 0.004587 | **0.004501** | 5 / 12 |
 
 The query-aware advantage disappears, as it should.
+
+## Gate 2 — finite-query generalization and reconstruction hedge
+
+A post-Gate challenge asked a sharper question: was the low-budget reversal really a capacity boundary, or was `query_rd` over-specializing to the finite calibration bank it used to choose compression moves?
+
+On the frozen Gate 1 code, the suspicious signature was clear: at 30–40% storage, the final query-aware memory still looked better on its own calibration queries than reconstruction memory, but lost that advantage on a fresh query draw. Gate 2 therefore froze a new evaluation block (`200..211`), calibration-bank multipliers `1×/2×/5×`, and one reconstruction-hedged objective:
+
+```text
+L_hedged(M) = query_mse(M, calibration) + reconstruction_mse(M, episodes)
+```
+
+No per-budget or post-result tuning was allowed. The full preregistration is in [`docs/superpowers/specs/2026-09-25-gate2-generalization-design.md`](docs/superpowers/specs/2026-09-25-gate2-generalization-design.md).
+
+**Frozen classification: `FAIL_GENERALIZATION_HEDGE`.**
+
+That failure is informative rather than null.
+
+### More calibration mostly corrects optimism
+
+| storage | 1× calibration | 1× eval | 1× gap | 5× calibration | 5× eval | 5× gap | 5× beats 1× |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 40% | 0.4890 | 0.5906 | 0.1016 | 0.5356 | **0.5699** | **0.0343** | 7 / 12 |
+| 30% | 0.6674 | 0.7773 | 0.1099 | 0.7178 | **0.7520** | **0.0342** | 5 / 12 |
+
+The mean calibration→evaluation gap shrank by about **66% at 40%** and **69% at 30%**. But held-out evaluation improved only about **3.5%** and **3.3%** respectively, and 5× beat 1× in only 7/12 and 5/12 seeds.
+
+So Claude's finite-sample diagnosis is substantially right, but with an important refinement: **more calibration makes the estimate less over-optimistic much more reliably than it makes the final compressed memory better.** The allocator is not merely starved for query samples; the greedy decisions themselves remain unstable under strong compression. The 2× row is also non-monotonic at 30%, another warning against reading sample count as a simple cure.
+
+### Reconstruction is a useful hedge, but not a universal winner
+
+| storage | pure query 1× eval | hedged eval | reconstruction eval | hedge beats query | hedge beats reconstruction |
+|---|---:|---:|---:|---:|---:|
+| 60% | 0.2390 | **0.1965** | 0.3974 | 11 / 12 | 12 / 12 |
+| 50% | 0.4133 | **0.3831** | 0.4959 | 7 / 12 | 12 / 12 |
+| 40% | 0.5906 | **0.5643** | 0.5701 | 8 / 12 | 6 / 12 |
+| 30% | 0.7773 | **0.6741** | 0.6772 | 12 / 12 | 6 / 12 |
+
+The hedge stabilizes the query allocator strongly—especially at 30%, where it improves mean held-out error by about **13.3%** and beats pure query in **12/12** seeds. At 40% it improves mean error by about **4.5%**. It also does not destroy the original 50–60% useful regime; on these fresh worlds it improves the mean there too.
+
+But the preregistered gate was deliberately stricter than a mean-only story:
+
+- 5× had to beat 1× in at least 8/12 seeds at both stress budgets; it managed **7/12 at 40% and 5/12 at 30%**.
+- the hedge had to beat pure query in at least 9/12 seeds at both stress budgets; it managed **8/12 at 40%** and 12/12 at 30%.
+- hedge mean had to beat reconstruction at both stress budgets; it did, but only narrowly: about **1.0% at 40%** and **0.45% at 30%**.
+- the high-budget non-regression criterion passed.
+
+So Gate 2 remains **FAIL**, without retuning `λ` or the thresholds.
+
+Frozen receipt: [`results/gate2.json`](results/gate2.json). The committed compact receipt contains every per-seed calibration/evaluation/gap row plus hedge/reconstruction scores; the expanded 219,081-byte receipt has SHA-256 `0f985b358e8fbb31e1fba5330e525a35de7fe2cf2f3bfed94d9e26a191a36430`. As in Gate 1, the environment could not sustain the monolithic long run, so the frozen runner was executed seed-by-seed without changing code or configuration and then aggregated with its own functions.
+
+### What changed scientifically
+
+Gate 1's 30% reversal should **not** be called a clean phase boundary anymore. The stronger statement supported by the two gates together is:
+
+> Query-addressed compression can exploit real structure in future demand, but when that demand is estimated from finite samples, aggressive greedy compression can over-specialize. More query evidence reduces estimation optimism, while a reconstruction term acts as a useful conservative prior. Neither alone yet gives a uniformly better low-budget memory.
+
+This makes the next problem more interesting than simply collecting more queries. A useful memory needs some representation of **uncertainty about what future queries will matter**.
 
 ## Synthetic world
 
@@ -137,6 +194,7 @@ Python 3.10+:
 python -m pip install -e ".[test]"
 pytest -q
 python -m experiments.run_gate1 --out results/gate1.json
+python -m experiments.run_gate2 --out results/gate2.json
 ```
 
 The build environment used for this repo killed long single shell calls before the full run could write its receipt, even though individual seeds took about 7–8 seconds. The frozen runner was therefore executed seed-by-seed with **unchanged code and configuration**, each row persisted, and those rows were aggregated with the runner's own `_summaries`, `_control_summary`, and `classify` functions. That execution fact and the frozen runner commit are recorded inside `results/gate1.json`.
@@ -171,10 +229,16 @@ Those repos motivated the question. They are **not evidence for Gate 1**; the ev
 
 ## Next gate
 
-Gate 1 is deliberately given the future query distribution through a calibration bank. A useful memory cannot rely on an oracle forever.
+Gate 2 says not to jump directly from an oracle calibration bank to a raw online sensitivity accumulator. A finite query history is itself noisy, and raw specialization is exactly what failed.
 
-The next gate should therefore remove that privilege:
+The next gate should therefore make **uncertainty/shrinkage part of the memory rule**. One concrete form is a resident query-direction metric that is pulled toward a reconstruction/isotropic prior when evidence is sparse and allowed to specialize only as repeated accesses accumulate:
 
-> Can the memory estimate future query importance online from its own past access history, and still approach the oracle `query_rd` allocator on held-out future queries?
+```math
+\tilde G_i = \frac{n_i}{n_i + \kappa} \hat G_i + \frac{\kappa}{n_i + \kappa} \alpha I
+```
 
-Only after that survives is it worth returning to real visual features or transformer KV state.
+with `G_hat_i` estimated only from past accesses. The test is no longer "can query history beat reconstruction?" but:
+
+> Can a memory learn which directions matter while remaining calibrated about what it does **not** yet know?
+
+That would connect the query-addressable idea back to resident temporal state without pretending that past attention or past queries are perfect forecasts of the future.
