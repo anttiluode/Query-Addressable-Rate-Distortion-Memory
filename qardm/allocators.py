@@ -82,6 +82,24 @@ def allocate_query(
     return _greedy(eps, budget, lambda memory: query_mse(memory, queries))
 
 
+def allocate_hedged(
+    episodes: Iterable[Episode],
+    calibration: Iterable[Query],
+    budget: int,
+    reconstruction_weight: float = 1.0,
+) -> AllocationResult:
+    if reconstruction_weight < 0:
+        raise ValueError("reconstruction_weight must be non-negative")
+    eps = tuple(episodes)
+    queries = tuple(calibration)
+    return _greedy(
+        eps,
+        budget,
+        lambda memory: query_mse(memory, queries)
+        + reconstruction_weight * reconstruction_mse(memory, eps),
+    )
+
+
 def allocate_recency(episodes: Iterable[Episode], budget: int) -> AllocationResult:
     eps = tuple(sorted(episodes, key=lambda e: e.time))
     if budget < 0:
