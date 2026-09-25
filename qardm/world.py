@@ -65,7 +65,8 @@ def _make_queries(
 ) -> tuple[Query, ...]:
     out: list[Query] = []
     for e in episodes:
-        for _ in range(QUERIES_PER_EPISODE):
+        n_queries = QUERIES_PER_EPISODE if isotropic else (24 if e.family in HOT_FAMILIES else 6)
+        for _ in range(n_queries):
             cue = e.key + rng.normal(0.0, 0.008, KEY_DIM)
             diagnostic = False
             if isotropic:
@@ -76,9 +77,10 @@ def _make_queries(
                 if diagnostic:
                     probe = np.zeros(PAYLOAD_DIM, dtype=float)
                     k = COARSE_DIM + (e.family % FINE_DIM)
-                    probe[k] = 1.0
+                    # The fine coordinate is low-energy in storage but
+                    # high-sensitivity in the downstream computation.
+                    probe[k] = 4.0
                     probe += rng.normal(0.0, 0.01, PAYLOAD_DIM)
-                    probe = _unit(probe)
                 else:
                     probe = np.zeros(PAYLOAD_DIM, dtype=float)
                     probe[:COARSE_DIM] = _unit(rng.normal(size=COARSE_DIM))

@@ -17,7 +17,6 @@ def test_world_shape_and_twins():
     assert e0.payload.shape == (12,)
     assert e0.key.shape == (4,)
     assert np.linalg.norm(e0.payload[:8] - e1.payload[:8]) < 0.35
-    # Each family's diagnostic coordinate is one of the four fine dims.
     k = 8 + (e0.family % 4)
     assert np.sign(e0.payload[k]) == -np.sign(e1.payload[k])
     assert np.linalg.norm(e0.payload[8:]) < np.linalg.norm(e0.payload[:8])
@@ -27,7 +26,6 @@ def test_calibration_and_evaluation_are_independent_draws():
     w = make_world(2)
     assert w.calibration is not w.evaluation
     assert len(w.calibration) == len(w.evaluation)
-    # Distinct noise draws make exact cue/probe pairs overwhelmingly different.
     assert not np.array_equal(w.calibration[0].cue, w.evaluation[0].cue)
 
 
@@ -47,3 +45,20 @@ def test_shuffle_calibration_preserves_queries_but_breaks_family_alignment():
     assert sorted(q.target for q in shuffled) == sorted(q.target for q in w.calibration)
     changed = sum(a.family != b.family for a, b in zip(w.calibration, shuffled))
     assert changed > len(shuffled) // 2
+
+
+def test_hot_families_receive_more_queries_than_cold_families():
+    w = make_world(99)
+    counts = {family: 0 for family in range(12)}
+    for q in w.calibration:
+        counts[q.family] += 1
+    assert counts[0] > counts[1] * 3
+    assert counts[2] > counts[3] * 3
+
+
+def test_diagnostic_query_amplifies_low_energy_fine_coordinate():
+    w = make_world(99)
+    q = next(q for q in w.calibration if q.diagnostic)
+    fine = 8 + (q.family % 4)
+    assert abs(q.probe[fine]) > 3.5
+    assert np.linalg.norm(q.probe[:8]) < 0.2
